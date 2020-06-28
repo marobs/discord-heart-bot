@@ -1,9 +1,12 @@
 import asyncio
 import logging
+import os
 import sys
 import discord
 
 from discord.ext import commands
+
+from heart import create_heart
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
@@ -29,11 +32,11 @@ class InputReadingError(Exception):
 
 #############################################################
 #                                                           #
-#                        Search                             #
+#                        Create                             #
 #                                                           #
 #############################################################
 @bot.command(name='create')
-async def create_heart(ctx, *, message):
+async def handle_create_heart(ctx, *, message):
     LOGGER.info(f'Got create request from {ctx.author}: {message}')
 
     try:
@@ -43,11 +46,18 @@ async def create_heart(ctx, *, message):
         await ctx.send(embed=get_error_embed('Input Error', str(err)))
         return
 
+    print(f"Calling create_heart with inside_hex={inside_hex}, outside_hex={outside_hex}")
+
     saved_filename = create_heart(inside_hex, outside_hex)
 
     await ctx.send(file=discord.File(saved_filename))
 
+    os.remove(saved_filename)
+
+
 def get_hex_input(message):
+
+    print(f'message: {message}')
 
     if (message is None):
         raise InputReadingError("No input found")
@@ -59,18 +69,24 @@ def get_hex_input(message):
         raise InputReadingError("No split character (' ') found.")
 
     values = message.split(' ')
-    if (len(values != 2)):
+
+    print(f'values: {values}')
+
+    if (len(values) != 2):
         raise InputReadingError("More than two values found")
 
     for value in values:
         if (len(value) != 7):
-            raise InputReadingError("Incorrectly formatted value found. Size incorrect. Must be of the form '#aaaaaa'. Value: ", value)
+            raise InputReadingError("Incorrectly formatted value found. Size incorrect. Must be of the form '#aaaaaa'. "
+                                    "Value: ", value)
 
         if (value[0] != '#'):
             raise InputReadingError("Incorrectly formatted value found. Must begin with #. Value: ", value)
 
-        if (value[1:] not in LEGAL_HEX_VALUES):
-            raise InputReadingError("Incorrectly formatted value found. Must only include hex values. Value: ", value)
+        for value_character in value[1:]:
+            if (value_character.lower() not in LEGAL_HEX_VALUES):
+                raise InputReadingError(f"Incorrectly formatted value found. Must only include hex values. Value: "
+                                        f"{value_character.lower()}")
 
     return values[0], values[1]
 
@@ -83,10 +99,9 @@ def get_error_embed(title, desc):
 
 
 if __name__ == '__main__':
-    with open('discord_token.txt') as filestream:
-        print(filestream.read())
+    with open('discord_token.txt') as file:
+        discord_token = file.read()
+        bot.run(discord_token)
 
-    #bot.run(DISCORD_TOKEN)
-
-    #for task in asyncio.Task.all_tasks():
-    #    task.cancel()
+        for task in asyncio.Task.all_tasks():
+            task.cancel()
