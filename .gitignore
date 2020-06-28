@@ -133,3 +133,6 @@ dmypy.json
 
 # Output images
 out/
+
+# Discord token
+discord_token.txt

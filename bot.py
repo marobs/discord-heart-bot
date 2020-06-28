@@ -14,8 +14,6 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 logging.getLogger("chardet.charsetprober").disabled = True
 
-
-DISCORD_TOKEN = ''
 LEGAL_HEX_VALUES = ('a', 'b', 'c', 'd', 'e', 'f', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
 
 bot = commands.Bot(command_prefix='h!')
@@ -25,8 +23,6 @@ async def on_ready():
     LOGGER.info(f'{bot.user.name} connected to Discord.')
     for guild in bot.guilds:
         LOGGER.info(f'Connected to {guild}')
-
-
 
 class InputReadingError(Exception):
     pass
@@ -49,7 +45,7 @@ async def create_heart(ctx, *, message):
 
     saved_filename = create_heart(inside_hex, outside_hex)
 
-    await ctx.send(file = discord.File(saved_filename))
+    await ctx.send(file=discord.File(saved_filename))
 
 def get_hex_input(message):
 
@@ -87,7 +83,10 @@ def get_error_embed(title, desc):
 
 
 if __name__ == '__main__':
-    bot.run(DISCORD_TOKEN)
+    with open('discord_token.txt') as filestream:
+        print(filestream.read())
 
-    for task in asyncio.Task.all_tasks():
-        task.cancel()
+    #bot.run(DISCORD_TOKEN)
+
+    #for task in asyncio.Task.all_tasks():
+    #    task.cancel()
