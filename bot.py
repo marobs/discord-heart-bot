@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+import discord
 
 from discord.ext import commands
 
@@ -13,6 +14,10 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 logging.getLogger("chardet.charsetprober").disabled = True
 
+
+DISCORD_TOKEN = ''
+LEGAL_HEX_VALUES = ('a', 'b', 'c', 'd', 'e', 'f', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+
 bot = commands.Bot(command_prefix='h!')
 
 @bot.event
@@ -21,6 +26,10 @@ async def on_ready():
     for guild in bot.guilds:
         LOGGER.info(f'Connected to {guild}')
 
+
+
+class InputReadingError(Exception):
+    pass
 
 #############################################################
 #                                                           #
@@ -31,127 +40,50 @@ async def on_ready():
 async def create_heart(ctx, *, message):
     LOGGER.info(f'Got create request from {ctx.author}: {message}')
 
-    if (blacklist.intersection(message.split(' '))):
-        await ctx.send(embed=get_error_embed('Blacklisted Tags', 'One or more requested tags are blacklisted.'))
-        return
-
     try:
-        e6_resp = await get_e621_json(message, DEFAULT_LIMIT, get_order(), get_rating(), str(get_score_threshold()))
-    except (E6ApiError, E6ResponseError):
-        await ctx.send(embed=get_error_embed('e621 API Error', 'Error searching e621.'))
+        inside_hex, outside_hex = get_hex_input(message)
+    except InputReadingError as err:
+        LOGGER.error(f'Encountered input error: {str(err)}')
+        await ctx.send(embed=get_error_embed('Input Error', str(err)))
         return
 
-    if (len(e6_resp) <= 0):
-        embed = get_error_embed('Tags Not Found', f'Unable to find any posts matching the tags {message}')
-        await ctx.send(embed=embed)
-        return
+    saved_filename = create_heart(inside_hex, outside_hex)
 
-    acceptable_post = get_random_nonblacklisted_post(e6_resp, blacklist)
+    await ctx.send(file = discord.File(saved_filename))
 
-    if (acceptable_post is None):
-        embed = get_error_embed('Blacklisted Tags', f'Unable to find an post with tags {message} '
-                                                    f'not also including blacklisted tags')
-        await ctx.send(embed=embed)
-        return
+def get_hex_input(message):
 
-    await ctx.send(embed=get_discord_embed(acceptable_post))
+    if (message is None):
+        raise InputReadingError("No input found")
 
+    if (len(message) != 15):
+        raise InputReadingError("Input must be in the form of '#aaaaaa #bbbbbb'")
 
-#############################################################
-#                                                           #
-#                       Settings                            #
-#                                                           #
-#############################################################
-@bot.group()
-async def settings(ctx):
-    if ctx.invoked_subcommand is None:
-        embed = get_error_embed('No Subcommand Passed',
-                                'The `setting` command has subcommands. See `e!help bl` for details.')
-        await ctx.send(embed=embed)
+    if (message.find(" ") == -1):
+        raise InputReadingError("No split character (' ') found.")
 
+    values = message.split(' ')
+    if (len(values != 2)):
+        raise InputReadingError("More than two values found")
 
-@settings.command()
-async def update(ctx, *, message):
-    try:
-        success_message = update_app_settings(message)
-        await ctx.send(success_message)
-    except Exception as err:
-        await ctx.send(str(err))
+    for value in values:
+        if (len(value) != 7):
+            raise InputReadingError("Incorrectly formatted value found. Size incorrect. Must be of the form '#aaaaaa'. Value: ", value)
+
+        if (value[0] != '#'):
+            raise InputReadingError("Incorrectly formatted value found. Must begin with #. Value: ", value)
+
+        if (value[1:] not in LEGAL_HEX_VALUES):
+            raise InputReadingError("Incorrectly formatted value found. Must only include hex values. Value: ", value)
+
+    return values[0], values[1]
 
 
-@settings.command()
-async def get(ctx, *, message):
-    try:
-        success_message = get_app_setting(message)
-        await ctx.send(success_message)
-    except Exception as err:
-        await ctx.send(str(err))
-
-
-#############################################################
-#                                                           #
-#                       Blacklist                           #
-#                                                           #
-#############################################################
-@bot.group()
-async def bl(ctx):
-    if ctx.invoked_subcommand is None:
-        embed = get_error_embed('No Subcommand Passed', 'The `bl` command has subcommands. See `e!help bl` for details.')
-        await ctx.send(embed=embed)
-
-
-@bl.command()
-async def check(ctx):
-    blacklist = blacklist_dao.get_blacklist_for_server(ctx.guild.id)
-    if len(blacklist) == 0 or not blacklist_dao.server_in_database(ctx.guild.id):
-        await ctx.send(f'This server is not currently blacklisting any tags.')
-    else:
-        await ctx.send(f'This server is currently blacklisting the tags: {" ".join(blacklist)}')
-
-
-@bl.command()
-async def add(ctx, *, message):
-    if not blacklist_dao.server_in_database(ctx.guild.id):
-        blacklist_dao.add_server_to_database(ctx.guild.id, ctx.guild.name)
-    tags = ''
-    ignore = ''
-    for tag in message.split(' '):
-        if blacklist_dao.add_tag_to_blacklist(tag, ctx.guild.id):
-            tags += f'`{tag}` '
-        else:
-            ignore += f'`{tag}` '
-    response = ''
-    if len(tags) > 0:
-        response += f"Added {tags} to the server's blacklist."
-    if len(ignore) > 0:
-        response += f"{'' if len(tags) == 0 else ' '}" \
-                    f"Ignoring {ignore} as {'it is' if len(ignore.split(' ')) == 2 else 'they are'} " \
-                    f"already blacklisted."
-    await ctx.send(response)
-
-
-@bl.command(name='rm')
-async def remove(ctx, *, message):
-    blacklist = blacklist_dao.get_blacklist_for_server(ctx.guild.id)
-    if len(blacklist) == 0 or not blacklist_dao.server_in_database(ctx.guild.id):
-        embed = get_error_embed('No Blacklist', 'This server is not currently blacklisting any tags.')
-        await ctx.send(embed=embed)
-        return
-    tags = ''
-    ignore = ''
-    for tag in message.split(' '):
-        if blacklist_dao.rm_tag_from_blacklist(tag, ctx.guild.id):
-            tags += f'`{tag}` '
-        else:
-            ignore += f'`{tag}` '
-    response = ''
-    if len(tags) > 0:
-        response += f"Removed {tags} from the server's blacklist."
-    if len(ignore) > 0:
-        response += f"{'' if len(tags) == 0 else ' '}" \
-                    f"Ignoring {ignore} as {'it is' if len(ignore.split(' ')) == 2 else 'they are'} " \
-                    f"not blacklisted."
-    await ctx.send(response)
+def get_error_embed(title, desc):
+    embed = discord.Embed(title=title,
+                          description=desc,
+                          color=0xe12020)
+    return embed
 
 
 if __name__ == '__main__':

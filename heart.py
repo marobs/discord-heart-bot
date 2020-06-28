@@ -29,8 +29,6 @@ def create_heart(inside_hex, outside_hex):
     image_data[..., :-1][outside_areas.T] = outside_rgb
 
     converted_heart = Image.fromarray(image_data)
-    converted_heart.save('out/heart-' + str(uuid4()) + ".png")
-    converted_heart.show()
-
-
-create_heart("#FF0000", "#800000")
+    filename = 'out/heart-' + str(uuid4()) + ".png"
+    converted_heart.save(filename)
+    return filename
