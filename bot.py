@@ -2,11 +2,12 @@ import asyncio
 import logging
 import os
 import sys
+import re
 import discord
 
 from discord.ext import commands
-
 from heart import create_heart
+from colors import HEX_COLOR_DICT
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
@@ -18,6 +19,7 @@ LOGGER = logging.getLogger(__name__)
 logging.getLogger("chardet.charsetprober").disabled = True
 
 LEGAL_HEX_VALUES = ('a', 'b', 'c', 'd', 'e', 'f', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+REGEX_HEX_MATCH = re.compile('#[a-fA-F0-9]{6}')
 
 bot = commands.Bot(command_prefix='h!')
 
@@ -40,7 +42,10 @@ async def handle_create_heart(ctx, *, message):
     LOGGER.info(f'Got create request from {ctx.author}: {message}')
 
     try:
-        inside_hex, outside_hex = get_hex_input(message)
+        values = split_message(message)
+        inside_hex = get_color_code(values[0])
+        outside_hex = get_color_code(values[1])
+        #inside_hex, outside_hex = get_hex_input(message)
     except InputReadingError as err:
         LOGGER.error(f'Encountered input error: {str(err)}')
         await ctx.send(embed=get_error_embed('Input Error', str(err)))
@@ -53,6 +58,30 @@ async def handle_create_heart(ctx, *, message):
     await ctx.send(file=discord.File(saved_filename))
 
     os.remove(saved_filename)
+
+
+def split_message(message):
+    if (message is None):
+        raise InputReadingError("No input found")
+
+    if ' ' not in message:
+         raise InputReadingError("No split character (' ') found.")
+
+    values = message.split(' ')
+
+    if (len(values) != 2):
+        raise InputReadingError("More than two values found")
+    return values
+
+
+def get_color_code(string):
+    if REGEX_HEX_MATCH.match(string) is not None:
+        color_code = string
+    else:
+        color_code = HEX_COLOR_DICT.get(string)
+    if color_code is None:
+        raise InputReadingError('')
+    return color_code
 
 
 def get_hex_input(message):
